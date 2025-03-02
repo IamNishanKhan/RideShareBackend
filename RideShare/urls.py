@@ -13,6 +13,8 @@ admin.site.site_title = 'Ride Share'
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/users/', include('users.urls')),
+    path('api/rides/', include('rides.urls')),
+    path('api/reviews/', include('reviews.urls')),
 ]
 
 if settings.DEBUG:
