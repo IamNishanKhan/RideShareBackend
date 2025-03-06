@@ -64,6 +64,13 @@ SIMPLE_JWT = {
 AUTH_USER_MODEL = 'users.User'
 
 
+import firebase_admin
+from firebase_admin import credentials
+
+FIREBASE_CRED = credentials.Certificate(BASE_DIR / 'ridesafensu-firebase-adminsdk-fbsvc-64ba57372b.json')
+firebase_admin.initialize_app(FIREBASE_CRED)
+
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

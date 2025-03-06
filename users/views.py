@@ -1,3 +1,4 @@
+from firebase_admin import auth as firebase_auth
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -97,9 +98,28 @@ class CustomTokenObtainPairView(APIView):
             if user and user.check_password(password):
                 refresh = RefreshToken.for_user(user)
                 user_data = UserProfileSerializer(user).data
+
+                # Sync user with Firebase Email/Password
+                try:
+                    # Check if user exists in Firebase
+                    firebase_user = firebase_auth.get_user_by_email(email)
+                except firebase_auth.UserNotFoundError:
+                    # If user doesn't exist, create them in Firebase
+                    try:
+                        firebase_user = firebase_auth.create_user(
+                            email=email,
+                            password=password,
+                            uid=str(user.id)
+                        )
+                    except Exception as e:
+                        return Response({"detail": f"Failed to create Firebase user: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                # Return Firebase credentials to the frontend
                 response_data = {
                     "refresh": str(refresh),
                     "access": str(refresh.access_token),
+                    "firebase_email": email,
+                    "firebase_password": password,
                     "user": user_data
                 }
                 return Response(response_data, status=status.HTTP_200_OK)

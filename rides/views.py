@@ -1,3 +1,4 @@
+from firebase_admin import firestore
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -5,6 +6,16 @@ from rest_framework import status
 from .models import Ride, RideRequest
 from .serializers import RideSerializer, RideRequestSerializer
 from django.shortcuts import get_object_or_404
+
+# Helper function to sync Firestore
+def sync_ride_to_firestore(ride):
+    db = firestore.client()
+    ride_doc = db.collection('ride_chats').document(f'ride_{ride.id}')
+    ride_doc.set({
+        'authorized_users': [str(ride.host.id)] + [str(user.id) for user in ride.members.all()],
+        'ride_status': 'active' if not ride.is_completed else 'completed',
+        'completion_timestamp': firestore.SERVER_TIMESTAMP if ride.is_completed else None
+    }, merge=True)
 
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
@@ -19,7 +30,8 @@ class CreateRideView(APIView):
 
         serializer = RideSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(host=request.user)
+            ride = serializer.save(host=request.user)
+            sync_ride_to_firestore(ride)  # Sync with Firestore
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -45,7 +57,7 @@ class JoinRideByIdView(APIView):
         ride.members.add(request.user)
         ride.seats_available -= 1
         ride.save()
-
+        sync_ride_to_firestore(ride)  # Sync with Firestore
         return Response({"message": "Successfully joined the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
 
 class JoinRideByCodeView(APIView):
@@ -74,7 +86,7 @@ class JoinRideByCodeView(APIView):
         ride.members.add(request.user)
         ride.seats_available -= 1
         ride.save()
-
+        sync_ride_to_firestore(ride)  # Sync with Firestore
         return Response({"message": "Successfully joined the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
 
 class DeleteRideView(APIView):
@@ -114,9 +126,9 @@ class LeaveRideView(APIView):
 
         ride.members.remove(request.user)
         ride.seats_available += 1
-        RideRequest.objects.filter(ride=ride, user=request.user).delete()  # Clean up request
+        RideRequest.objects.filter(ride=ride, user=request.user).delete()
         ride.save()
-
+        sync_ride_to_firestore(ride)  # Sync with Firestore
         return Response({"message": "Successfully left the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
 
 class CurrentRidesView(APIView):
@@ -137,3 +149,19 @@ class RideHistoryView(APIView):
         all_rides = (hosted_rides | member_rides).distinct()
         serializer = RideSerializer(all_rides, many=True)
         return Response(serializer.data)
+
+# New CompleteRideView
+class CompleteRideView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, ride_id):
+        ride = get_object_or_404(Ride, id=ride_id)
+        if ride.host != request.user:
+            return Response({"error": "Only the host can complete this ride."}, status=status.HTTP_403_FORBIDDEN)
+        if ride.is_completed:
+            return Response({"error": "Ride is already completed."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ride.is_completed = True
+        ride.save()
+        sync_ride_to_firestore(ride)  # Syncs the completion status and timestamp to Firestore
+        return Response({"message": "Ride marked as completed. Chat will be deleted in 1 hour."}, status=status.HTTP_200_OK)
