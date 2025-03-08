@@ -1,4 +1,3 @@
-# sos/models.py
 from django.db import models
 from users.models import User
 
@@ -9,7 +8,8 @@ class SOSAlert(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     notified_users = models.ManyToManyField(User, related_name='sos_notifications', blank=True)
     status = models.CharField(max_length=20, default='active')
-    escalated_from = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)  # Tracks SOS chain
+    escalated_from = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
+    is_community_alert = models.BooleanField(default=False)  # New field to indicate community-wide alert
 
     def __str__(self):
         lat = f"{self.latitude:.4f}" if self.latitude is not None else "None"

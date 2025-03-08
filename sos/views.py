@@ -1,4 +1,3 @@
-# sos/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -17,7 +16,9 @@ class CreateSOSAlertView(APIView):
         serializer = SOSAlertSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             sos_alert = serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            response_data = serializer.data
+            response_data['notification_status'] = f"Notifications sent to {sos_alert.notified_users.count()} users"
+            return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class ActiveSOSAlertsView(APIView):
