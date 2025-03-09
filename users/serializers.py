@@ -31,10 +31,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
+    expo_push_token = serializers.CharField(required=False, allow_blank=True)  # Add this
 
     class Meta:
         model = User
-        fields = ['email', 'password']
+        fields = ['email', 'password', 'expo_push_token']
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:

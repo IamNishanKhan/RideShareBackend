@@ -1,3 +1,4 @@
+# users/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -20,14 +21,10 @@ class RegisterView(APIView):
             if User.objects.filter(email=email).exists():
                 return Response({"error": "User with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Generate a 6-digit OTP
             otp_code = str(random.randint(100000, 999999))
-
-            # Store user data and OTP in cache with 5-minute timeout (300 seconds)
             cache.set(f"pending_user_{email}", serializer.validated_data, timeout=300)
             cache.set(f"otp_{email}", otp_code, timeout=300)
 
-            # Send OTP email
             send_mail(
                 subject="Your OTP for RideSafeNSU Registration",
                 message=f"Your OTP is {otp_code}. It expires in 5 minutes.",
@@ -45,6 +42,7 @@ class VerifyOTPView(APIView):
     def post(self, request):
         email = request.data.get("email")
         otp_code = request.data.get("otp_code")
+        expo_push_token = request.data.get("expo_push_token")  # Add this
 
         if not email or not otp_code:
             return Response({"error": "Email and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -58,7 +56,6 @@ class VerifyOTPView(APIView):
         if stored_otp != otp_code:
             return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create the user after OTP verification
         user = User.objects.create_user(
             email=user_data['email'],
             first_name=user_data['first_name'],
@@ -70,9 +67,10 @@ class VerifyOTPView(APIView):
         )
         if 'profile_photo' in user_data:
             user.profile_photo = user_data['profile_photo']
-            user.save()
+        if expo_push_token:  # Save the token during registration
+            user.expo_push_token = expo_push_token
+        user.save()
 
-        # Generate tokens and return user data
         refresh = RefreshToken.for_user(user)
         user_data_serialized = UserProfileSerializer(user).data
         response_data = {
@@ -81,7 +79,6 @@ class VerifyOTPView(APIView):
             "user": user_data_serialized
         }
 
-        # Clear cache after successful registration
         cache.delete(f"otp_{email}")
         cache.delete(f"pending_user_{email}")
 
@@ -93,8 +90,12 @@ class CustomTokenObtainPairView(APIView):
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
+            expo_push_token = serializer.validated_data.get('expo_push_token')  # Add this
             user = User.objects.filter(email=email).first()
             if user and user.check_password(password):
+                if expo_push_token and user.expo_push_token != expo_push_token:  # Update token if changed
+                    user.expo_push_token = expo_push_token
+                    user.save()
                 refresh = RefreshToken.for_user(user)
                 user_data = UserProfileSerializer(user).data
                 response_data = {
@@ -105,7 +106,7 @@ class CustomTokenObtainPairView(APIView):
                 return Response(response_data, status=status.HTTP_200_OK)
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
