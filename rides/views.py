@@ -5,6 +5,9 @@ from rest_framework import status
 from .models import Ride, RideRequest
 from .serializers import RideSerializer, RideRequestSerializer
 from django.shortcuts import get_object_or_404
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+from django.utils import timezone
 
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
@@ -116,6 +119,18 @@ class LeaveRideView(APIView):
         ride.seats_available += 1
         RideRequest.objects.filter(ride=ride, user=request.user).delete()  # Clean up request
         ride.save()
+
+        # Notify WebSocket group that the user has left
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"chat_ride_{ride_id}",
+            {
+                "type": "chat_message",
+                "message": f"{request.user.first_name} {request.user.last_name} has left the ride.",
+                "username": "System",
+                "timestamp": str(timezone.now())
+            }
+        )
 
         return Response({"message": "Successfully left the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
 
