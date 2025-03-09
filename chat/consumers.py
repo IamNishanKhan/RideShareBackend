@@ -38,6 +38,7 @@ class RideChatConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps(message))
 
     async def disconnect(self, close_code):
+        logger.info(f"Disconnecting from {self.room_group_name} with code {close_code}")
         await self.channel_layer.group_discard(
             self.room_group_name,
             self.channel_name
@@ -45,10 +46,17 @@ class RideChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         logger.info(f"Received raw data: '{text_data}'")
+        user = self.scope['user']
+
+        # Revalidate membership before processing the message
+        if not await self.is_user_in_ride(user, self.ride_id):
+            logger.warning(f"User {user} is no longer in ride {self.ride_id}, closing connection")
+            await self.close(code=4403)
+            return
+
         try:
             text_data_json = json.loads(text_data)
             message = text_data_json['message']
-            user = self.scope['user']
 
             # Prepare the full message JSON
             message_data = {
@@ -75,7 +83,6 @@ class RideChatConsumer(AsyncWebsocketConsumer):
             if not message:
                 await self.send(text_data=json.dumps({"error": "Empty message received"}))
                 return
-            user = self.scope['user']
             message_data = {
                 'message': message,
                 'First Name': user.first_name,
@@ -92,7 +99,23 @@ class RideChatConsumer(AsyncWebsocketConsumer):
             )
 
     async def chat_message(self, event):
-        await self.send(text_data=json.dumps(event['message_data']))
+        # Handle the message payload safely
+        message_data = event.get('message_data', {})
+        if not message_data or 'message' not in message_data:
+            logger.error(f"Invalid message_data in event: {event}")
+            await self.send(text_data=json.dumps({
+                "message": "System error: Invalid message format received.",
+                "First Name": "System",
+                "Last Name": "",
+                "timestamp": str(await self.get_current_time())
+            }))
+            return
+        await self.send(text_data=json.dumps(message_data))
+
+    async def user_leave(self, event):
+        # This handler is kept for future use if we implement channel-specific disconnects
+        logger.info(f"User leave event received for ride {self.ride_id}, but no action taken due to scope issue")
+        # Note: This won't be triggered directly from the view anymore
 
     @database_sync_to_async
     def get_user_from_token(self):

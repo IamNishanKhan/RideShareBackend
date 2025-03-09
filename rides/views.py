@@ -3,11 +3,15 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .models import Ride, RideRequest
-from .serializers import RideSerializer, RideRequestSerializer
+from .serializers import RideSerializer
 from django.shortcuts import get_object_or_404
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.utils import timezone
+from chat.models import ChatMessage
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
@@ -89,8 +93,12 @@ class DeleteRideView(APIView):
             return Response({"error": "Only the host can delete this ride."}, status=status.HTTP_403_FORBIDDEN)
         if ride.members.exists():
             return Response({"error": "Cannot delete ride with members."}, status=status.HTTP_400_BAD_REQUEST)
+
+        logger.info(f"Deleting ride {ride_id}")
         ride.delete()
-        return Response({"message": "Ride deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+        logger.info(f"Ride {ride_id} deleted successfully")
+
+        return Response({"message": "Ride deleted successfully."}, status=status.HTTP_200_OK)
 
 class ListRidesView(APIView):
     permission_classes = [IsAuthenticated]
@@ -120,15 +128,28 @@ class LeaveRideView(APIView):
         RideRequest.objects.filter(ride=ride, user=request.user).delete()  # Clean up request
         ride.save()
 
+        # Prepare system message data
+        message_data = {
+            "message": f"{request.user.first_name} {request.user.last_name} has left the ride.",
+            "First Name": "System",
+            "Last Name": "",
+            "timestamp": str(timezone.now()),
+        }
+
+        # Save the system message to the database
+        ChatMessage.objects.create(
+            ride=ride,
+            user=request.user,
+            message_json=message_data
+        )
+
         # Notify WebSocket group that the user has left
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             f"chat_ride_{ride_id}",
             {
                 "type": "chat_message",
-                "message": f"{request.user.first_name} {request.user.last_name} has left the ride.",
-                "username": "System",
-                "timestamp": str(timezone.now())
+                "message_data": message_data,
             }
         )
 
@@ -146,7 +167,6 @@ class RideHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Rides where user was host or member, and are completed
         hosted_rides = Ride.objects.filter(host=request.user, is_completed=True)
         member_rides = Ride.objects.filter(members=request.user, is_completed=True)
         all_rides = (hosted_rides | member_rides).distinct()
