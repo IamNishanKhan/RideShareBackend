@@ -27,6 +27,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     student_id = models.CharField(max_length=20, unique=True)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     profile_photo = models.ImageField(upload_to='profiles/', blank=True, null=True)
+    expo_push_token = models.CharField(max_length=255, blank=True, null=True)
     latitude = models.FloatField(blank=True, null=True)  # Added for location
     longitude = models.FloatField(blank=True, null=True)  # Added for location
     is_active = models.BooleanField(default=True)

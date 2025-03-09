@@ -1,3 +1,4 @@
+# sos/serializers.py
 from rest_framework import serializers
 from .models import SOSAlert
 from users.models import User
@@ -17,7 +18,7 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         required=False
     )
     location = serializers.SerializerMethodField(read_only=True)
-    is_community_alert = serializers.BooleanField(default=False, required=False)  # New field
+    is_community_alert = serializers.BooleanField(default=False, required=False)
 
     class Meta:
         model = SOSAlert
@@ -42,7 +43,7 @@ class SOSAlertSerializer(serializers.ModelSerializer):
             # Explicitly selected users
             sos_alert.notified_users.set(notified_users)
         elif is_community_alert:
-            # Notify all users near the location based on their home location
+            # Notify all users near the location
             nearby_users = self.get_nearby_users(sos_alert.latitude, sos_alert.longitude)
             sos_alert.notified_users.set(nearby_users.exclude(id=user.id))
         else:
@@ -50,8 +51,8 @@ class SOSAlertSerializer(serializers.ModelSerializer):
             nearby_users = self.get_nearby_users(sos_alert.latitude, sos_alert.longitude)
             sos_alert.notified_users.set(nearby_users.exclude(id=user.id))
 
-        # Simulate sending notifications (dummy response for now)
-        self.send_dummy_notifications(sos_alert)
+        # Send Expo notifications
+        self.send_expo_notifications(sos_alert)
         return sos_alert
 
     def get_nearby_users(self, latitude, longitude, radius_km=5):
@@ -59,7 +60,7 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         if not users.exists():
             return User.objects.none()
 
-        # Use Google Maps API for accurate distance calculation
+        # Use Google Maps API for distance calculation
         origin = f"{latitude},{longitude}"
         destinations = '|'.join(f"{user.latitude},{user.longitude}" for user in users)
         url = (
@@ -81,9 +82,36 @@ class SOSAlertSerializer(serializers.ModelSerializer):
 
         return User.objects.filter(id__in=[user.id for user in nearby_users])
 
-    def send_dummy_notifications(self, sos_alert):
-        # Simulate sending notifications to notified_users
+    def send_expo_notifications(self, sos_alert):
         notified = sos_alert.notified_users.all()
+        if not notified:
+            return
+
+        # Prepare Expo push notification messages
+        messages = []
         for user in notified:
-            # In a real app, you'd integrate SMS (e.g., Twilio) or push notifications here
-            print(f"Dummy notification sent to {user.first_name} {user.last_name} ({user.phone_number})")
+            if user.expo_push_token:  # Check if the user has a push token
+                messages.append({
+                    "to": user.expo_push_token,
+                    "sound": "default",
+                    "title": "SOS Alert",
+                    "body": f"An SOS alert has been created near you at {sos_alert.location}.",
+                    "data": {"sos_alert_id": sos_alert.id}
+                })
+
+        if not messages:
+            return
+
+        # Send notifications to Expo
+        url = "https://exp.host/--/api/v2/push/send"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        response = requests.post(url, json=messages, headers=headers)
+
+        if response.status_code != 200:
+            # Log the error (in production, use proper logging)
+            print(f"Failed to send Expo notifications: {response.text}")
+        else:
+            print(f"Expo notifications sent successfully to {len(messages)} users")
