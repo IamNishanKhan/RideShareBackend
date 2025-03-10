@@ -6,7 +6,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'gender', 'student_id', 'phone_number', 'profile_photo', 'password']
+        fields = ['id', 'email', 'first_name', 'last_name', 'gender', 'student_id', 'phone_number', 'profile_photo', 'password', 'expo_push_token', 'latitude', 'longitude']
 
     def validate_email(self, value):
         if not value.endswith('@northsouth.edu'):
@@ -18,9 +18,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
-            gender=validated_data['gender'],
-            student_id=validated_data['student_id'],
+            gender=validated_data.get('gender', ''),
+            student_id=validated_data.get('student_id', ''),
             phone_number=validated_data.get('phone_number', ''),
+            expo_push_token=validated_data.get('expo_push_token', ''),
+            latitude=validated_data.get('latitude', None),
+            longitude=validated_data.get('longitude', None),
             password=validated_data['password']
         )
         if 'profile_photo' in validated_data:
@@ -31,7 +34,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
-    expo_push_token = serializers.CharField(required=False, allow_blank=True)  # Add this
+    expo_push_token = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
@@ -40,5 +43,5 @@ class UserLoginSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'gender', 'student_id', 'phone_number', 'profile_photo']
+        fields = ['id', 'email', 'first_name', 'last_name', 'gender', 'student_id', 'phone_number', 'profile_photo', 'expo_push_token', 'latitude', 'longitude']
         read_only_fields = ['email', 'student_id']

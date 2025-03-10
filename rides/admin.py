@@ -13,22 +13,22 @@ class ChatMessageInline(admin.TabularInline):
         return False  # Prevent adding new messages via admin
 
     def has_delete_permission(self, request, obj=None):
-        return False  # Prevent deleting messages via admin
+        return request.user.is_superuser  # Allow deletion only for superusers
 
 # Register the Ride model with the inline
 @admin.register(Ride)
 class RideAdmin(admin.ModelAdmin):
-    list_display = ('ride_code', 'host', 'vehicle_type', 'pickup_name', 'destination_name', 'seats_available', 'is_completed', 'is_female_only')
+    list_display = ('ride_code', 'host', 'vehicle_type', 'pickup_name', 'destination_name', 'seats_available', 'is_completed')
     search_fields = ('ride_code', 'host__first_name', 'host__last_name', 'pickup_name', 'destination_name')
-    list_filter = ('is_female_only','vehicle_type', 'is_completed', 'departure_time')
+    list_filter = ('vehicle_type', 'is_completed', 'departure_time')
     inlines = [ChatMessageInline]
     ordering = ('-departure_time',)
 
-    # Prevent deletion of rides with members (enforce via view)
+    # Allow deletion of rides, which will cascade to chat messages
     def has_delete_permission(self, request, obj=None):
         if obj and obj.members.exists():
-            return False
-        return super().has_delete_permission(request, obj)
+            return False  # Prevent deletion if there are members
+        return request.user.is_superuser  # Only superusers can delete
 
 @admin.register(RideRequest)
 class RideRequestAdmin(admin.ModelAdmin):

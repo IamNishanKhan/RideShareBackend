@@ -1,9 +1,6 @@
 from django.contrib import admin
 from .models import ChatMessage
 
-# Optionally unregister ChatMessage if you don't want a standalone view
-# admin.site.unregister(ChatMessage)
-
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
     list_display = ('ride', 'user', 'message_preview', 'timestamp')
@@ -15,8 +12,6 @@ class ChatMessageAdmin(admin.ModelAdmin):
         return obj.message_json.get('message', 'No message')[:50] if obj.message_json else 'No data'
     message_preview.short_description = 'Message Preview'
 
-    def has_add_permission(self, request, obj=None):
-        return False  # Prevent adding new messages via admin
-
+    # Allow deletion of ChatMessage objects
     def has_delete_permission(self, request, obj=None):
-        return False  # Prevent deleting messages via admin
+        return request.user.is_superuser  # Only superusers can delete
