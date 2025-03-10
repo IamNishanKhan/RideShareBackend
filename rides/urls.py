@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     CreateRideView, JoinRideByIdView, JoinRideByCodeView, DeleteRideView,
-    ListRidesView, LeaveRideView, CurrentRidesView, RideHistoryView
+    ListRidesView, LeaveRideView, CurrentRidesView, RideHistoryView, CompleteRideView
 )
 
 urlpatterns = [
@@ -13,4 +13,5 @@ urlpatterns = [
     path('leave/<int:ride_id>/', LeaveRideView.as_view(), name='leave_ride'),
     path('current/', CurrentRidesView.as_view(), name='current_rides'),
     path('history/', RideHistoryView.as_view(), name='ride_history'),
+    path('<int:ride_id>/complete/', CompleteRideView.as_view(), name='complete_ride'),
 ]
