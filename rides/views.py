@@ -13,6 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -26,9 +27,36 @@ class CreateRideView(APIView):
 
         serializer = RideSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(host=request.user)
+            ride = serializer.save(host=request.user)
+            
+            # Prepare system message for ride creation
+            message_data = {
+                "message": f"{request.user.first_name} {request.user.last_name} has created this ride from {ride.pickup_name} to {ride.destination_name}.",
+                "First Name": "System",
+                "Last Name": "",
+                "timestamp": str(timezone.now()),
+            }
+
+            # Save the system message to the database
+            ChatMessage.objects.create(
+                ride=ride,
+                user=request.user,  # User who triggered the action
+                message_json=message_data
+            )
+
+            # Notify WebSocket group
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"chat_ride_{ride.id}",
+                {
+                    "type": "chat_message",
+                    "message_data": message_data,
+                }
+            )
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
 class JoinRideByIdView(APIView):
     permission_classes = [IsAuthenticated]
@@ -53,7 +81,33 @@ class JoinRideByIdView(APIView):
         ride.seats_available -= 1
         ride.save()
 
+        # Prepare system message for ride joining
+        message_data = {
+            "message": f"{request.user.first_name} {request.user.last_name} has joined this ride",
+            "First Name": "System",
+            "Last Name": "",
+            "timestamp": str(timezone.now()),
+        }
+
+        # Save the system message to the database
+        ChatMessage.objects.create(
+            ride=ride,
+            user=request.user,
+            message_json=message_data
+        )
+
+        # Notify WebSocket group
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"chat_ride_{ride_id}",
+            {
+                "type": "chat_message",
+                "message_data": message_data,
+            }
+        )
+
         return Response({"message": "Successfully joined the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
+
 
 class JoinRideByCodeView(APIView):
     permission_classes = [IsAuthenticated]
@@ -82,7 +136,34 @@ class JoinRideByCodeView(APIView):
         ride.seats_available -= 1
         ride.save()
 
+        # Prepare system message for ride joining
+        message_data = {
+            "message": f"{request.user.first_name} {request.user.last_name} has joined this ride",
+            "First Name": "System",
+            "Last Name": "",
+            "timestamp": str(timezone.now()),
+        }
+
+        # Save the system message to the database
+        ChatMessage.objects.create(
+            ride=ride,
+            user=request.user,
+            message_json=message_data
+        )
+
+        # Notify WebSocket group
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"chat_ride_{ride.id}",
+            {
+                "type": "chat_message",
+                "message_data": message_data,
+            }
+        )
+
         return Response({"message": "Successfully joined the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
+
+
 
 class DeleteRideView(APIView):
     permission_classes = [IsAuthenticated]
