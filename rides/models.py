@@ -62,10 +62,24 @@ class Ride(models.Model):
             raise ValidationError("Only female hosts can create female-only ride groups.")
 
     def save(self, *args, **kwargs):
-        if not self.pk:  # Set seats_available only on creation
+        # Check if this is an update and is_completed has changed to True
+        if self.pk:  # If the instance already exists (update)
+            old_instance = Ride.objects.get(pk=self.pk)
+            if not old_instance.is_completed and self.is_completed:
+                # Ride just completed, delete all chat messages immediately
+                self.chat_messages.all().delete()
+
+        # Set seats_available only on creation
+        if not self.pk:
             self.seats_available = self.set_initial_seats()
+
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # Delete all associated chat messages before deleting the ride
+        self.chat_messages.all().delete()
+        super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.vehicle_type} ({self.ride_code}) from {self.pickup_name} to {self.destination_name}"
