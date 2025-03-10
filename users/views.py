@@ -1,15 +1,18 @@
-# users/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import UserRegistrationSerializer, UserProfileSerializer, UserLoginSerializer
+from .serializers import (UserRegistrationSerializer, UserProfileSerializer, 
+                          UserLoginSerializer, ForgotPasswordSerializer, VerifyForgotPasswordOTPSerializer, 
+                          ChangePasswordSerializer)
 from .models import User
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db import transaction
 import random
+import os
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -106,7 +109,8 @@ class CustomTokenObtainPairView(APIView):
                 return Response(response_data, status=status.HTTP_200_OK)
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -117,9 +121,98 @@ class ProfileView(APIView):
     def put(self, request):
         serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
-            if 'profile_photo' in request.FILES:
-                request.user.profile_photo = request.FILES['profile_photo']
-                request.user.save()
-            serializer.save()
-            return Response({"message": "Profile updated successfully", "user": serializer.data}, status=status.HTTP_200_OK)
+            with transaction.atomic():  # Ensure atomicity for profile photo update
+                # Update name fields if provided
+                if 'first_name' in request.data:
+                    request.user.first_name = request.data['first_name']
+                if 'last_name' in request.data:
+                    request.user.last_name = request.data['last_name']
+
+                # Handle profile photo upload with custom naming
+                if 'profile_photo' in request.FILES:
+                    user = request.user
+                    # Define the new filename: <user_id>_user_dp.png
+                    new_filename = f"{user.id}_user_dp.png"
+                    file_extension = request.FILES['profile_photo'].name.split('.')[-1]  # Preserve extension if not PNG
+                    if file_extension.lower() != 'png':
+                        new_filename = f"{user.id}_user_dp.{file_extension.lower()}"
+
+                    # Full path for the new file
+                    new_file_path = os.path.join(settings.MEDIA_ROOT, 'profiles', new_filename)
+
+                    # Remove old profile photo if it exists and is different
+                    if user.profile_photo and os.path.exists(user.profile_photo.path):
+                        os.remove(user.profile_photo.path)
+
+                    # Save the new file
+                    with open(new_file_path, 'wb+') as destination:
+                        for chunk in request.FILES['profile_photo'].chunks():
+                            destination.write(chunk)
+
+                    # Update the user's profile_photo field with the relative path
+                    user.profile_photo = os.path.join('profiles', new_filename)
+
+                # Save all changes
+                user.save()
+                serializer = UserProfileSerializer(user)  # Refresh serializer with updated data
+                return Response({"message": "Profile updated successfully", "user": serializer.data}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            otp_code = str(random.randint(100000, 999999))
+            cache.set(f"forgot_otp_{email}", otp_code, timeout=300)  # 5 minutes expiry
+
+            send_mail(
+                subject="Your OTP for Password Reset",
+                message=f"Your OTP is {otp_code}. It expires in 5 minutes.",
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+
+            return Response({"message": "OTP sent to your email. Please verify within 5 minutes."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class VerifyForgotPasswordOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = VerifyForgotPasswordOTPSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            otp_code = serializer.validated_data['otp_code']
+            new_password = serializer.validated_data['new_password']
+
+            stored_otp = cache.get(f"forgot_otp_{email}")
+            if not stored_otp:
+                return Response({"error": "OTP expired or invalid request."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if stored_otp != otp_code:
+                return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+
+            user = User.objects.get(email=email)
+            user.set_password(new_password)
+            user.save()
+
+            cache.delete(f"forgot_otp_{email}")
+            return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            user = request.user
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
