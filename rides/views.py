@@ -13,6 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -26,9 +27,36 @@ class CreateRideView(APIView):
 
         serializer = RideSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(host=request.user)
+            ride = serializer.save(host=request.user)
+            
+            # Prepare system message for ride creation
+            message_data = {
+                "message": f"{request.user.first_name} {request.user.last_name} has created this ride from {ride.pickup_name} to {ride.destination_name}.",
+                "First Name": "System",
+                "Last Name": "",
+                "timestamp": str(timezone.now()),
+            }
+
+            # Save the system message to the database
+            ChatMessage.objects.create(
+                ride=ride,
+                user=request.user,  # User who triggered the action
+                message_json=message_data
+            )
+
+            # Notify WebSocket group
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"chat_ride_{ride.id}",
+                {
+                    "type": "chat_message",
+                    "message_data": message_data,
+                }
+            )
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
 class JoinRideByIdView(APIView):
     permission_classes = [IsAuthenticated]
@@ -53,7 +81,33 @@ class JoinRideByIdView(APIView):
         ride.seats_available -= 1
         ride.save()
 
+        # Prepare system message for ride joining
+        message_data = {
+            "message": f"{request.user.first_name} {request.user.last_name} has joined this ride",
+            "First Name": "System",
+            "Last Name": "",
+            "timestamp": str(timezone.now()),
+        }
+
+        # Save the system message to the database
+        ChatMessage.objects.create(
+            ride=ride,
+            user=request.user,
+            message_json=message_data
+        )
+
+        # Notify WebSocket group
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"chat_ride_{ride_id}",
+            {
+                "type": "chat_message",
+                "message_data": message_data,
+            }
+        )
+
         return Response({"message": "Successfully joined the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
+
 
 class JoinRideByCodeView(APIView):
     permission_classes = [IsAuthenticated]
@@ -82,15 +136,50 @@ class JoinRideByCodeView(APIView):
         ride.seats_available -= 1
         ride.save()
 
+        # Prepare system message for ride joining
+        message_data = {
+            "message": f"{request.user.first_name} {request.user.last_name} has joined this ride",
+            "First Name": "System",
+            "Last Name": "",
+            "timestamp": str(timezone.now()),
+        }
+
+        # Save the system message to the database
+        ChatMessage.objects.create(
+            ride=ride,
+            user=request.user,
+            message_json=message_data
+        )
+
+        # Notify WebSocket group
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"chat_ride_{ride.id}",
+            {
+                "type": "chat_message",
+                "message_data": message_data,
+            }
+        )
+
         return Response({"message": "Successfully joined the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
+
+
 
 class DeleteRideView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, ride_id):
         ride = get_object_or_404(Ride, id=ride_id)
+        
+        # Check if the ride is completed first
+        if ride.is_completed:
+            return Response({"error": "Cannot delete a completed ride."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Check if the user is the host
         if ride.host != request.user:
             return Response({"error": "Only the host can delete this ride."}, status=status.HTTP_403_FORBIDDEN)
+            
+        # Check if there are members
         if ride.members.exists():
             return Response({"error": "Cannot delete ride with members."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -110,6 +199,7 @@ class ListRidesView(APIView):
         serializer = RideSerializer(rides, many=True)
         return Response(serializer.data)
 
+
 class LeaveRideView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -118,23 +208,57 @@ class LeaveRideView(APIView):
 
         if ride.is_completed:
             return Response({"error": "Cannot leave a completed ride."}, status=status.HTTP_400_BAD_REQUEST)
-        if ride.host == request.user:
-            return Response({"error": "Host cannot leave their own ride. Delete the ride instead."}, status=status.HTTP_400_BAD_REQUEST)
-        if not ride.members.filter(id=request.user.id).exists():
+
+        # Check if user is in the ride
+        if not ride.members.filter(id=request.user.id).exists() and ride.host != request.user:
             return Response({"error": "You are not a member of this ride."}, status=status.HTTP_400_BAD_REQUEST)
 
-        ride.members.remove(request.user)
-        ride.seats_available += 1
-        RideRequest.objects.filter(ride=ride, user=request.user).delete()  # Clean up request
-        ride.save()
+        # Handle host leaving
+        if ride.host == request.user:
+            if not ride.members.exists():
+                # If no members, delete the ride instead
+                ride.delete()
+                return Response({"message": "Ride deleted as it had no members."}, status=status.HTTP_200_OK)
+            else:
+                # Reassign host to the earliest joined member
+                earliest_request = RideRequest.objects.filter(
+                    ride=ride, 
+                    is_approved=True
+                ).order_by('requested_at').first()
+                
+                if earliest_request:
+                    new_host = earliest_request.user
+                    ride.host = new_host
+                    ride.members.remove(new_host)  # Remove new host from members
+                    ride.seats_available += 1  # Adjust seats as original host is leaving
+                    
+                    # Prepare system message for host change
+                    message_data = {
+                        "message": f"{request.user.first_name} {request.user.last_name} has left the ride. "
+                                  f"{new_host.first_name} {new_host.last_name} is now the host.",
+                        "First Name": "System",
+                        "Last Name": "",
+                        "timestamp": str(timezone.now()),
+                    }
+                else:
+                    # This shouldn't happen due to members check, but as a fallback
+                    return Response({"error": "Unable to reassign host."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            # Regular member leaving
+            ride.members.remove(request.user)
+            ride.seats_available += 1
+            RideRequest.objects.filter(ride=ride, user=request.user).delete()  # Clean up request
+            
+            # Prepare system message for member leaving
+            message_data = {
+                "message": f"{request.user.first_name} {request.user.last_name} has left the ride.",
+                "First Name": "System",
+                "Last Name": "",
+                "timestamp": str(timezone.now()),
+            }
 
-        # Prepare system message data
-        message_data = {
-            "message": f"{request.user.first_name} {request.user.last_name} has left the ride.",
-            "First Name": "System",
-            "Last Name": "",
-            "timestamp": str(timezone.now()),
-        }
+        # Save changes to ride
+        ride.save()
 
         # Save the system message to the database
         ChatMessage.objects.create(
@@ -143,7 +267,7 @@ class LeaveRideView(APIView):
             message_json=message_data
         )
 
-        # Notify WebSocket group that the user has left
+        # Notify WebSocket group
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             f"chat_ride_{ride_id}",
@@ -153,7 +277,11 @@ class LeaveRideView(APIView):
             }
         )
 
-        return Response({"message": "Successfully left the ride.", "ride": RideSerializer(ride).data}, status=status.HTTP_200_OK)
+        return Response({
+            "message": "Successfully left the ride.",
+            "ride": RideSerializer(ride).data
+        }, status=status.HTTP_200_OK)
+
 
 class CurrentRidesView(APIView):
     permission_classes = [IsAuthenticated]
