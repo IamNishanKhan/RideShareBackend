@@ -66,3 +66,35 @@ class UserReviewsView(APIView):
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Failed to retrieve reviews: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
+class BadgeStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        try:
+            # Get the user or return 404 if not found
+            user = get_object_or_404(User, id=user_id)
+            
+            # Get or create badge for the user
+            badge, created = Badge.objects.get_or_create(user=user)
+            
+            # If badge was just created or needs updating, calculate it
+            if created or not badge.level:
+                badge.update_badge()
+            
+            # Serialize the badge data
+            serializer = BadgeSerializer(badge)
+            
+            return Response({
+                "user_id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "badge": serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                "error": f"Failed to retrieve badge status: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
