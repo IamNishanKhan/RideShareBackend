@@ -163,7 +163,14 @@ import os
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
+
+# Ensure the static directory exists
+STATIC_DIR = os.path.join(BASE_DIR, 'static')
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR)
+
+STATICFILES_DIRS = [STATIC_DIR]
+
 
 
 # Media files (User uploaded content)
