@@ -23,12 +23,12 @@ class UserAdmin(BaseUserAdmin):
     ordering = ['email']  # Override the default ordering to use 'email' instead of 'username'
     fieldsets = (
         (None, {'fields': ('email', 'first_name', 'last_name', 'phone_number', 'profile_photo', 'gender', 'student_id', 'expo_push_token', 'latitude', 'longitude', 'password')}),
-        ('Permissions', {'fields': ('is_active', 'is_staff')}),
+        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser',)}),
     )
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'first_name', 'last_name', 'phone_number', 'profile_photo', 'gender', 'student_id', 'expo_push_token', 'latitude', 'longitude', 'password1', 'password2', 'is_active', 'is_staff'),
+            'fields': ('email', 'first_name', 'last_name', 'phone_number', 'profile_photo', 'gender', 'student_id', 'expo_push_token', 'latitude', 'longitude', 'password1', 'password2', 'is_active', 'is_staff', 'is_superuser',),
         }),
     )
 
