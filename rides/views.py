@@ -300,3 +300,52 @@ class RideHistoryView(APIView):
         all_rides = (hosted_rides | member_rides).distinct()
         serializer = RideSerializer(all_rides, many=True)
         return Response(serializer.data)
+    
+    
+class CompleteRideView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, ride_id):
+        ride = get_object_or_404(Ride, id=ride_id)
+
+        # Check if the user is the host
+        if ride.host != request.user:
+            return Response({"error": "Only the host can complete this ride."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Check if the ride is already completed
+        if ride.is_completed:
+            return Response({"error": "This ride is already completed."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark the ride as completed
+        ride.is_completed = True
+        ride.save()
+
+        # Prepare system message for ride completion
+        message_data = {
+            "message": f"{request.user.first_name} {request.user.last_name} has marked this ride as completed.",
+            "First Name": "System",
+            "Last Name": "",
+            "timestamp": str(timezone.now()),
+        }
+
+        # Save the system message to the database
+        ChatMessage.objects.create(
+            ride=ride,
+            user=request.user,
+            message_json=message_data
+        )
+
+        # Notify WebSocket group
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"chat_ride_{ride_id}",
+            {
+                "type": "chat_message",
+                "message_data": message_data,
+            }
+        )
+
+        return Response({
+            "message": "Ride marked as completed successfully.",
+            "ride": RideSerializer(ride).data
+        }, status=status.HTTP_200_OK)

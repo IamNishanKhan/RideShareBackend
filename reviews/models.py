@@ -12,7 +12,7 @@ class Review(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('reviewer', 'reviewed_user', 'ride')  # One review per user per ride
+        unique_together = ('reviewer', 'reviewed_user', 'ride')
 
     def clean(self):
         if self.reviewer == self.reviewed_user:
@@ -31,29 +31,46 @@ class Review(models.Model):
 
 class Badge(models.Model):
     BADGE_LEVELS = [
-        ('Good', 'Good'),        # 3 rides with avg 4+ stars
-        ('Reliable', 'Reliable'), # 10 rides with avg 4+ stars
-        ('Hero', 'Hero'),        # 25 rides with avg 4+ stars
+        ('New', 'New'),            # < 3 completed rides
+        ('Participant', 'Participant'),  # 3+ rides, avg < 4
+        ('Good', 'Good'),          # 3+ rides, avg 4+ stars
+        ('Reliable', 'Reliable'),  # 10+ rides, avg 4+ stars
+        ('Hero', 'Hero'),          # 25+ rides, avg 4+ stars
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='badge')
-    level = models.CharField(max_length=20, choices=BADGE_LEVELS, default='Good')
+    level = models.CharField(max_length=20, choices=BADGE_LEVELS, default='New')
     updated_at = models.DateTimeField(auto_now=True)
 
     def update_badge(self):
-        """Update badge based on average rating and number of reviews."""
+        """Update badge based on average rating and number of completed rides with reviews."""
+        # Get all reviews for this user
         reviews = Review.objects.filter(reviewed_user=self.user)
-        if reviews.exists():
-            avg_rating = sum(review.rating for review in reviews) / reviews.count()
-            high_rating_rides = reviews.filter(rating__gte=4).count()
+        review_count = reviews.count()
 
-            if high_rating_rides >= 25 and avg_rating >= 4:
-                self.level = 'Hero'
-            elif high_rating_rides >= 10 and avg_rating >= 4:
-                self.level = 'Reliable'
-            elif high_rating_rides >= 3 and avg_rating >= 4:
-                self.level = 'Good'
-            self.save()
+        # Count completed rides where the user was either host or member
+        completed_rides = (Ride.objects.filter(host=self.user, is_completed=True) | 
+                          Ride.objects.filter(members=self.user, is_completed=True)).distinct().count()
+
+        # Calculate average rating
+        if review_count > 0:
+            avg_rating = sum(review.rating for review in reviews) / review_count
+        else:
+            avg_rating = 0
+
+        # Badge logic based on completed rides and average rating
+        if completed_rides >= 25 and avg_rating >= 4:
+            self.level = 'Hero'
+        elif completed_rides >= 10 and avg_rating >= 4:
+            self.level = 'Reliable'
+        elif completed_rides >= 3 and avg_rating >= 4:
+            self.level = 'Good'
+        elif completed_rides >= 3:  # 3+ rides but avg < 4
+            self.level = 'Participant'
+        else:
+            self.level = 'New'  # < 3 rides
+        
+        self.save()
 
     def get_average_rating(self):
         """Calculate the average rating for the user."""
