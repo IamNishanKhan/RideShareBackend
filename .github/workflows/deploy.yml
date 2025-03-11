@@ -1,0 +1,80 @@
+name: CI/CD Pipeline for Django Deployment
+
+on:
+  push:
+    branches:
+      - main  # Trigger the deployment when code is pushed to the 'main' branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code from GitHub
+      - name: Checkout the code
+        uses: actions/checkout@v3
+
+      # Step 2: Deploy to VPS via SSH and check logs
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: 203.161.48.190
+          username: root
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            # Free port 80
+            sudo fuser -k 80/tcp || true
+            sudo systemctl stop httpd || true
+            sudo systemctl disable httpd || true
+
+            # Navigate to deployment directory
+            cd /home/Ride/
+
+            # Update Git repository with debugging
+            echo "Updating Git repository..."
+            if [ ! -d .git ]; then
+              echo "Initializing new Git repository..."
+              git init
+              git remote add origin https://${{ secrets.GIT_PAT }}@github.com/Ratim321/segmentation-ui-backend.git
+              git fetch origin
+              git checkout main
+            else
+              echo "Ensuring branch is main..."
+              CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+              if [ "$CURRENT_BRANCH" != "main" ]; then
+                git branch -m "$CURRENT_BRANCH" main
+              fi
+              echo "Cleaning working directory..."
+              git clean -fd  # Remove untracked files
+              git reset --hard  # Reset tracked files
+              git fetch origin
+              git checkout main
+              git branch --set-upstream-to=origin/main main
+              git reset --hard origin/main
+            fi
+            echo "Git status after update:"
+            git status
+            ls -l  # Debug: List files to confirm update
+
+            # Stop and remove existing containers
+            sudo docker-compose down
+
+            # Build and start containers
+            sudo docker-compose up --build
+
+            # Wait for containers to stabilize
+            sleep 10
+
+            # Check Django logs for errors
+            echo "Checking Django logs..."
+            ERROR_LOG=$(sudo docker-compose logs web | grep -E -i 'error|exception|traceback|fail|fatal|modulenotfound')
+            if [ -n "$ERROR_LOG" ]; then
+              echo "Critical error found in web logs:"
+              echo "$ERROR_LOG"
+              exit 1  # Fail the deployment if errors are found
+            else
+              echo "No critical errors found in logs. Deployment successful."
+            fi
+
+            # Clean up unused Docker images
+            sudo docker image prune -f
