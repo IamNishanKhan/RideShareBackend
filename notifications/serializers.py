@@ -1,9 +1,9 @@
 from rest_framework import serializers
 from .models import NotificationPreference
-from users.serializers import NSUUserSerializer
+from users.serializers import UserRegistrationSerializer
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):
-    user = NSUUserSerializer(read_only=True)
+    user = UserRegistrationSerializer(read_only=True)
 
     class Meta:
         model = NotificationPreference
