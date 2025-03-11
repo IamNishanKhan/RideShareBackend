@@ -1,8 +1,8 @@
 from django.db import models
-from users.models import NSUUser
+from users.models import User
 
 class NotificationPreference(models.Model):
-    user = models.ForeignKey(NSUUser, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
     origin_latitude = models.FloatField(null=True, blank=True)  # Store origin latitude
     origin_longitude = models.FloatField(null=True, blank=True)  # Store origin longitude
     destination_latitude = models.FloatField(null=True, blank=True)  # Store destination latitude
