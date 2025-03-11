@@ -1,25 +1,23 @@
-# Use official Python image
 FROM python:3.10
 
-# Set working directory
 WORKDIR /app
 
-# Update package list (if needed for future dependencies)
+# Update and install necessary packages
 RUN apt-get update && apt-get install -y \
+    gcc \
+    python3-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file and install Python dependencies
-COPY requirements.txt ./
+# Install dependencies from requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Gunicorn
-RUN pip install gunicorn
-
-# Copy the Django project files
+# Copy the project files
 COPY . .
 
-# Expose port 8000
+# Expose the Django port
 EXPOSE 8000
 
-# Run the Django application using Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "RideShare.wsgi:application"]
+# Start the application with Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "RideShare.wsgi:application"]
