@@ -35,7 +35,7 @@ jobs:
             if [ ! -d .git ]; then
               echo "Initializing new Git repository..."
               git init
-              git remote add origin https://${{ secrets.GIT_PAT }}@github.com/Ratim321/segmentation-ui-backend.git
+              git remote add origin https://${{ secrets.GIT_PAT }}@github.com/IamNishanKhan/RideShareBackend.git
               git fetch origin
               git checkout main
             else
