@@ -3,7 +3,7 @@ version: '3.8'
 services:
   web:
     build: .
-    container_name: django_app
+    container_name: ride_app
     command: gunicorn --bind 0.0.0.0:8000 --workers 2 --log-level debug RideShare.wsgi:application  # Adjust this for fewer workers
     restart: always
     volumes:
