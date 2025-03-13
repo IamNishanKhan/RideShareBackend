@@ -1,18 +1,16 @@
 on:
   push:
     branches:
-      - main  # Trigger the deployment when code is pushed to the 'main' branch
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the code from GitHub
       - name: Checkout the code
         uses: actions/checkout@v3
 
-      # Step 2: Deploy to VPS via SSH and check logs
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
         with:
@@ -20,75 +18,75 @@ jobs:
           username: root
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            # Free port 80 if another service is using it
+            # Free port 80 if needed
             sudo fuser -k 80/tcp || true
             sudo systemctl stop httpd || true
             sudo systemctl disable httpd || true
 
             # Navigate to deployment directory
-            cd /home/Ride/
+            cd /home/Ride
 
-            # Update Git repository with debugging
-            echo "Updating Git repository..."
-            if [ ! -d .git ]; then
-              echo "Initializing new Git repository..."
-              git init
-              git remote add origin https://${{ secrets.GIT_PAT }}@github.com/IamNishanKhan/RideShareBackend.git
-              git fetch origin
-              git checkout main
-            else
-              echo "Ensuring branch is main..."
-              CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-              if [ "$CURRENT_BRANCH" != "main" ]; then
-                git branch -m "$CURRENT_BRANCH" main
+            # Fix Git ownership issue by running Git commands as the 'rideshare' user
+            echo "Updating Git repository as rideshare user..."
+            sudo -u rideshare bash -c '
+              cd /home/Ride
+              if [ ! -d .git ]; then
+                echo "Initializing new Git repository..."
+                git init
+                git remote add origin https://${{ secrets.GIT_PAT }}@github.com/IamNishanKhan/RideShareBackend.git
+                git fetch origin
+                git checkout main
+              else
+                echo "Ensuring branch is main..."
+                CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+                if [ "$CURRENT_BRANCH" != "main" ]; then
+                  git branch -m "$CURRENT_BRANCH" main
+                fi
+                echo "Cleaning working directory..."
+                git clean -fd
+                git reset --hard
+                git fetch origin
+                git checkout main
+                git branch --set-upstream-to=origin/main main
+                git reset --hard origin/main
               fi
-              echo "Cleaning working directory..."
-              git clean -fd  # Remove untracked files
-              git reset --hard  # Reset tracked files
-              git fetch origin
-              git checkout main
-              git branch --set-upstream-to=origin/main main
-              git reset --hard origin/main
-            fi
-            echo "Git status after update:"
-            git status
+              echo "Git status after update:"
+              git status
+            '
             ls -l  # Debug: List files to confirm update
 
             # Activate virtual environment and collect static files
-            source venv/bin/activate
-            echo "Collecting static files..."
-            python manage.py collectstatic --noinput
+            sudo -u rideshare bash -c '
+              cd /home/Ride
+              source venv/bin/activate
+              echo "Collecting static files..."
+              python manage.py collectstatic --noinput
+            '
 
             # Restart Gunicorn service
             echo "Restarting Gunicorn..."
             sudo systemctl restart gunicorn
-            sleep 5  # Wait for Gunicorn to stabilize
-
-            # Check Gunicorn status
-            echo "Checking Gunicorn status..."
+            sleep 5
             GUNICORN_STATUS=$(sudo systemctl status gunicorn)
             if echo "$GUNICORN_STATUS" | grep -q "active (running)"; then
               echo "Gunicorn is running successfully."
             else
               echo "Gunicorn failed to start. Status:"
               echo "$GUNICORN_STATUS"
-              exit 1  # Fail the deployment if Gunicorn isn't running
+              exit 1
             fi
 
             # Restart Nginx service
             echo "Restarting Nginx..."
             sudo systemctl restart nginx
-            sleep 5  # Wait for Nginx to stabilize
-
-            # Check Nginx status
-            echo "Checking Nginx status..."
+            sleep 5
             NGINX_STATUS=$(sudo systemctl status nginx)
             if echo "$NGINX_STATUS" | grep -q "active (running)"; then
               echo "Nginx is running successfully."
             else
               echo "Nginx failed to start. Status:"
               echo "$NGINX_STATUS"
-              exit 1  # Fail the deployment if Nginx isn't running
+              exit 1
             fi
 
             # Check application logs for errors
@@ -97,7 +95,7 @@ jobs:
             if [ -n "$ERROR_LOG" ]; then
               echo "Critical error found in Gunicorn logs:"
               echo "$ERROR_LOG"
-              exit 1  # Fail the deployment if errors are found
+              exit 1
             else
               echo "No critical errors found in logs. Deployment successful."
             fi
@@ -108,7 +106,7 @@ jobs:
             if [ -n "$NGINX_ERROR_LOG" ]; then
               echo "Critical error found in Nginx logs:"
               echo "$NGINX_ERROR_LOG"
-              exit 1  # Fail the deployment if errors are found
+              exit 1
             else
               echo "No critical errors found in Nginx logs."
             fi
