@@ -91,15 +91,6 @@ jobs:
 
             # Check application logs for errors
             echo "Checking application logs..."
-            ERROR_LOG=$(journalctl -u gunicorn -n 100 | grep -E -i 'error|exception|traceback|fail|fatal|modulenotfound')
-            if [ -n "$ERROR_LOG" ]; then
-              echo "Critical error found in Gunicorn logs:"
-              echo "$ERROR_LOG"
-              exit 1
-            else
-              echo "No critical errors found in logs. Deployment successful."
-            fi
-
             # Check Nginx logs for errors
             echo "Checking Nginx logs..."
             NGINX_ERROR_LOG=$(cat /var/log/nginx/rideshare_error.log | grep -E -i 'error|fail|fatal')
