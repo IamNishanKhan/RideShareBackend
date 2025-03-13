@@ -1,5 +1,3 @@
-name: CI/CD Pipeline for Django Deployment
-
 on:
   push:
     branches:
@@ -22,7 +20,7 @@ jobs:
           username: root
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            # Free port 80
+            # Free port 80 if another service is using it
             sudo fuser -k 80/tcp || true
             sudo systemctl stop httpd || true
             sudo systemctl disable httpd || true
@@ -35,7 +33,7 @@ jobs:
             if [ ! -d .git ]; then
               echo "Initializing new Git repository..."
               git init
-              git remote add origin https://${{ secrets.GIT_PAT }}@github.com/Ratim321/segmentation-ui-backend.git
+              git remote add origin https://${{ secrets.GIT_PAT }}@github.com/IamNishanKhan/RideShareBackend.git
               git fetch origin
               git checkout main
             else
@@ -56,25 +54,61 @@ jobs:
             git status
             ls -l  # Debug: List files to confirm update
 
-            # Stop and remove existing containers
-            sudo docker-compose down
+            # Activate virtual environment and collect static files
+            source venv/bin/activate
+            echo "Collecting static files..."
+            python manage.py collectstatic --noinput
 
-            # Build and start containers
-            sudo docker-compose up --build
+            # Restart Gunicorn service
+            echo "Restarting Gunicorn..."
+            sudo systemctl restart gunicorn
+            sleep 5  # Wait for Gunicorn to stabilize
 
-            # Wait for containers to stabilize
-            sleep 10
+            # Check Gunicorn status
+            echo "Checking Gunicorn status..."
+            GUNICORN_STATUS=$(sudo systemctl status gunicorn)
+            if echo "$GUNICORN_STATUS" | grep -q "active (running)"; then
+              echo "Gunicorn is running successfully."
+            else
+              echo "Gunicorn failed to start. Status:"
+              echo "$GUNICORN_STATUS"
+              exit 1  # Fail the deployment if Gunicorn isn't running
+            fi
 
-            # Check Django logs for errors
-            echo "Checking Django logs..."
-            ERROR_LOG=$(sudo docker-compose logs web | grep -E -i 'error|exception|traceback|fail|fatal|modulenotfound')
+            # Restart Nginx service
+            echo "Restarting Nginx..."
+            sudo systemctl restart nginx
+            sleep 5  # Wait for Nginx to stabilize
+
+            # Check Nginx status
+            echo "Checking Nginx status..."
+            NGINX_STATUS=$(sudo systemctl status nginx)
+            if echo "$NGINX_STATUS" | grep -q "active (running)"; then
+              echo "Nginx is running successfully."
+            else
+              echo "Nginx failed to start. Status:"
+              echo "$NGINX_STATUS"
+              exit 1  # Fail the deployment if Nginx isn't running
+            fi
+
+            # Check application logs for errors
+            echo "Checking application logs..."
+            ERROR_LOG=$(journalctl -u gunicorn -n 100 | grep -E -i 'error|exception|traceback|fail|fatal|modulenotfound')
             if [ -n "$ERROR_LOG" ]; then
-              echo "Critical error found in web logs:"
+              echo "Critical error found in Gunicorn logs:"
               echo "$ERROR_LOG"
               exit 1  # Fail the deployment if errors are found
             else
               echo "No critical errors found in logs. Deployment successful."
             fi
 
-            # Clean up unused Docker images
-            sudo docker image prune -f
+            # Check Nginx logs for errors
+            echo "Checking Nginx logs..."
+            NGINX_ERROR_LOG=$(cat /var/log/nginx/rideshare_error.log | grep -E -i 'error|fail|fatal')
+            if [ -n "$NGINX_ERROR_LOG" ]; then
+              echo "Critical error found in Nginx logs:"
+              echo "$NGINX_ERROR_LOG"
+              exit 1  # Fail the deployment if errors are found
+            else
+              echo "No critical errors found in Nginx logs."
+            fi
