@@ -1,13 +1,13 @@
-# sos/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status, generics
-from .models import SOSAlert
-from .serializers import SOSAlertSerializer, UserSerializer,EmergencyContactSerializer,EmergencyContact
+from .models import SOSAlert, EmergencyContact
+from .serializers import SOSAlertSerializer, UserSerializer, EmergencyContactSerializer
 from users.models import User
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+
 User = get_user_model()
 
 class CreateSOSAlertView(APIView):
@@ -17,6 +17,20 @@ class CreateSOSAlertView(APIView):
         serializer = SOSAlertSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             sos_alert = serializer.save()
+            
+            # If no notified_users are provided, use the user's emergency contacts
+            if not sos_alert.notified_users.exists() and not sos_alert.is_community_alert:
+                emergency_contacts = EmergencyContact.objects.filter(user=request.user)
+                if emergency_contacts.exists():
+                    notified_users = [ec.contact for ec in emergency_contacts]
+                    sos_alert.notified_users.set(notified_users)
+                    sos_alert.save()
+                else:
+                    return Response(
+                        {"error": "No emergency contacts found to notify."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
             response_data = serializer.data
             response_data['notification_status'] = f"Notifications sent to {sos_alert.notified_users.count()} users"
             return Response(response_data, status=status.HTTP_201_CREATED)
@@ -44,7 +58,6 @@ class UserListView(generics.ListAPIView):
                 Q(email__icontains=search_query)
             )
         return queryset
-    
 
 class EmergencyContactView(APIView):
     permission_classes = [IsAuthenticated]
@@ -74,4 +87,4 @@ class EmergencyContactView(APIView):
                 )
             serializer.save(user=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)    
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
