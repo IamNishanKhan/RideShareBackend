@@ -283,6 +283,38 @@ class LeaveRideView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+class RideDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, ride_id):
+        """
+        Retrieve detailed information about a specific ride by its ID.
+        Only accessible to authenticated users who are either the host or a member of the ride,
+        or if the ride is still active and has available seats (publicly visible).
+        """
+        ride = get_object_or_404(Ride, id=ride_id)
+        
+        # Check visibility permissions
+        is_host = ride.host == request.user
+        is_member = ride.members.filter(id=request.user.id).exists()
+        is_public = not ride.is_completed and ride.seats_available > 0
+        
+        if not (is_host or is_member or is_public):
+            return Response(
+                {"error": "You don't have permission to view this ride's details."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # If the ride is female-only, restrict visibility to female users only (unless host/member)
+        if ride.is_female_only and request.user.gender != 'Female' and not (is_host or is_member):
+            return Response(
+                {"error": "This ride is restricted to female users only."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = RideSerializer(ride)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 class CurrentRidesView(APIView):
     permission_classes = [IsAuthenticated]
 

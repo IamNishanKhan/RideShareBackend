@@ -103,7 +103,7 @@ class BadgeStatusView(APIView):
                 "email": user.email,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
-                "badge": serializer.data
+                "badge": serializer.data  # This now includes total_rides
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Failed to retrieve badge status: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
