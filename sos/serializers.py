@@ -1,6 +1,6 @@
 # sos/serializers.py
 from rest_framework import serializers
-from .models import SOSAlert
+from .models import SOSAlert,EmergencyContact
 from users.models import User
 import requests
 from django.conf import settings
@@ -9,6 +9,17 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'first_name', 'last_name', 'email', 'phone_number']
+
+class EmergencyContactSerializer(serializers.ModelSerializer):
+    contact = UserSerializer(read_only=True)
+    contact_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), source='contact', write_only=True
+    )
+
+    class Meta:
+        model = EmergencyContact
+        fields = ['id', 'contact', 'contact_id', 'added_at']
+        read_only_fields = ['added_at']        
 
 class SOSAlertSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)

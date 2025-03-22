@@ -9,7 +9,7 @@ class SOSAlert(models.Model):
     notified_users = models.ManyToManyField(User, related_name='sos_notifications', blank=True)
     status = models.CharField(max_length=20, default='active')
     escalated_from = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
-    is_community_alert = models.BooleanField(default=False)  # New field to indicate community-wide alert
+    is_community_alert = models.BooleanField(default=False)
 
     def __str__(self):
         lat = f"{self.latitude:.4f}" if self.latitude is not None else "None"
@@ -19,3 +19,14 @@ class SOSAlert(models.Model):
     @property
     def location(self):
         return (self.latitude, self.longitude) if self.latitude and self.longitude else None
+
+class EmergencyContact(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='emergency_contacts')
+    contact = models.ForeignKey(User, on_delete=models.CASCADE, related_name='emergency_contact_of')
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'contact')  # Prevent duplicate emergency contacts
+
+    def __str__(self):
+        return f"{self.contact.username} is an emergency contact for {self.user.username}"
