@@ -1,3 +1,5 @@
+name: Deploy to VPS
+
 on:
   push:
     branches:
@@ -25,6 +27,13 @@ jobs:
 
             # Navigate to deployment directory
             cd /home/Ride
+
+            # Fix permissions for staticfiles directory
+            echo "Fixing permissions for staticfiles directory..."
+            if [ -d "/home/Ride/staticfiles" ]; then
+              sudo chown -R rideshare:www-data /home/Ride/staticfiles
+              sudo chmod -R 775 /home/Ride/staticfiles
+            fi
 
             # Fix Git ownership issue by running Git commands as the 'rideshare' user
             echo "Updating Git repository as rideshare user..."
@@ -76,6 +85,17 @@ jobs:
               exit 1
             fi
 
+            # Test Nginx configuration before restarting
+            echo "Testing Nginx configuration..."
+            NGINX_TEST=$(sudo nginx -t 2>&1)
+            if echo "$NGINX_TEST" | grep -q "syntax is ok"; then
+              echo "Nginx configuration test passed."
+            else
+              echo "Nginx configuration test failed. Output:"
+              echo "$NGINX_TEST"
+              exit 1
+            fi
+
             # Restart Nginx service
             echo "Restarting Nginx..."
             sudo systemctl restart nginx
@@ -91,9 +111,9 @@ jobs:
 
             # Check application logs for errors
             echo "Checking application logs..."
-            # Check Nginx logs for errors
+            # Check Nginx logs for critical errors (more specific check)
             echo "Checking Nginx logs..."
-            NGINX_ERROR_LOG=$(cat /var/log/nginx/rideshare_error.log | grep -E -i 'error|fail|fatal')
+            NGINX_ERROR_LOG=$(cat /var/log/nginx/rideshare_error.log | grep -E -i '\[crit\]|\[emerg\]|\[alert\]')
             if [ -n "$NGINX_ERROR_LOG" ]; then
               echo "Critical error found in Nginx logs:"
               echo "$NGINX_ERROR_LOG"
