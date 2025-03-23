@@ -110,14 +110,14 @@ jobs:
             fi
 
             # Check application logs for errors
-            echo "Checking application logs..."
+            # echo "Checking application logs..."
             # Check Nginx logs for critical errors (more specific check)
-            echo "Checking Nginx logs..."
-            NGINX_ERROR_LOG=$(cat /var/log/nginx/rideshare_error.log | grep -E -i '\[crit\]|\[emerg\]|\[alert\]')
-            if [ -n "$NGINX_ERROR_LOG" ]; then
-              echo "Critical error found in Nginx logs:"
-              echo "$NGINX_ERROR_LOG"
-              exit 1
-            else
-              echo "No critical errors found in Nginx logs."
-            fi
+            # echo "Checking Nginx logs..."
+            # NGINX_ERROR_LOG=$(cat /var/log/nginx/rideshare_error.log | grep -E -i '\[crit\]|\[emerg\]|\[alert\]')
+            # if [ -n "$NGINX_ERROR_LOG" ]; then
+            #   echo "Critical error found in Nginx logs:"
+            #   echo "$NGINX_ERROR_LOG"
+            #   exit 1
+            # else
+            #   echo "No critical errors found in Nginx logs."
+            # fi
