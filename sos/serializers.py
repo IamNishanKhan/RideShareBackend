@@ -1,6 +1,6 @@
 # sos/serializers.py
 from rest_framework import serializers
-from .models import SOSAlert,EmergencyContact
+from .models import SOSAlert, EmergencyContact
 from users.models import User
 import requests
 from django.conf import settings
@@ -8,7 +8,11 @@ from django.conf import settings
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'first_name', 'last_name', 'email', 'phone_number']
+        fields = [
+            'id', 'first_name', 'last_name', 'email', 'phone_number',
+            'sound_enabled', 'location_enabled', 'notifications_enabled',
+            'vibration_enabled', 'emergency_message'
+        ]
 
 class EmergencyContactSerializer(serializers.ModelSerializer):
     contact = UserSerializer(read_only=True)
@@ -19,7 +23,7 @@ class EmergencyContactSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmergencyContact
         fields = ['id', 'contact', 'contact_id', 'added_at']
-        read_only_fields = ['added_at']        
+        read_only_fields = ['added_at']
 
 class SOSAlertSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -51,19 +55,16 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         sos_alert = SOSAlert.objects.create(user=user, is_community_alert=is_community_alert, **validated_data)
 
         if notified_users:
-            # Explicitly selected users
             sos_alert.notified_users.set(notified_users)
         elif is_community_alert:
-            # Notify all users near the location
             nearby_users = self.get_nearby_users(sos_alert.latitude, sos_alert.longitude)
             sos_alert.notified_users.set(nearby_users.exclude(id=user.id))
         else:
-            # Default behavior: notify nearby users (e.g., within 5km)
             nearby_users = self.get_nearby_users(sos_alert.latitude, sos_alert.longitude)
             sos_alert.notified_users.set(nearby_users.exclude(id=user.id))
 
-        # Send Expo notifications
-        self.send_expo_notifications(sos_alert)
+        custom_message = user.emergency_message or "An SOS alert has been created near you."
+        self.send_expo_notifications(sos_alert, custom_message)
         return sos_alert
 
     def get_nearby_users(self, latitude, longitude, radius_km=5):
@@ -71,7 +72,6 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         if not users.exists():
             return User.objects.none()
 
-        # Use Google Maps API for distance calculation
         origin = f"{latitude},{longitude}"
         destinations = '|'.join(f"{user.latitude},{user.longitude}" for user in users)
         url = (
@@ -87,33 +87,32 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         nearby_users = []
         for i, row in enumerate(data['rows'][0]['elements']):
             if row['status'] == 'OK':
-                distance_m = row['distance']['value']  # Distance in meters
+                distance_m = row['distance']['value']
                 if distance_m <= radius_km * 1000:
                     nearby_users.append(users[i])
 
         return User.objects.filter(id__in=[user.id for user in nearby_users])
 
-    def send_expo_notifications(self, sos_alert):
+    def send_expo_notifications(self, sos_alert, custom_message=None):
         notified = sos_alert.notified_users.all()
         if not notified:
             return
 
-        # Prepare Expo push notification messages
         messages = []
         for user in notified:
-            if user.expo_push_token:  # Check if the user has a push token
+            if user.expo_push_token:
+                message_body = custom_message.format(location=sos_alert.location) if custom_message else f"An SOS alert has been created near you at {sos_alert.location}."
                 messages.append({
                     "to": user.expo_push_token,
                     "sound": "default",
                     "title": "SOS Alert",
-                    "body": f"An SOS alert has been created near you at {sos_alert.location}.",
+                    "body": message_body,
                     "data": {"sos_alert_id": sos_alert.id}
                 })
 
         if not messages:
             return
 
-        # Send notifications to Expo
         url = "https://exp.host/--/api/v2/push/send"
         headers = {
             "Accept": "application/json",
@@ -122,7 +121,6 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         response = requests.post(url, json=messages, headers=headers)
 
         if response.status_code != 200:
-            # Log the error (in production, use proper logging)
             print(f"Failed to send Expo notifications: {response.text}")
         else:
             print(f"Expo notifications sent successfully to {len(messages)} users")

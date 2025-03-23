@@ -1,3 +1,4 @@
+# users/models.py
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
@@ -5,7 +6,6 @@ class UserManager(BaseUserManager):
     def create_user(self, email, first_name, last_name, student_id=None, password=None, **extra_fields):
         if not email:
             raise ValueError("The Email field must be set")
-        # Removed the mandatory student_id check since it's optional in the model
         email = self.normalize_email(email)
         user = self.model(
             email=email,
@@ -24,12 +24,11 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_active', True)
         if password is None:
             raise ValueError("Password must be set")
-        # Pass student_id as None since it's optional for superusers
         user = self.create_user(
             email=email,
             first_name=first_name,
             last_name=last_name,
-            student_id=None,  # Set to None instead of empty string
+            student_id=None,
             password=password,
             **extra_fields
         )
@@ -50,6 +49,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     longitude = models.FloatField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+
+    # New fields for SOS settings
+    sound_enabled = models.BooleanField(default=True)
+    location_enabled = models.BooleanField(default=True)
+    notifications_enabled = models.BooleanField(default=True)
+    vibration_enabled = models.BooleanField(default=True)
+    emergency_message = models.TextField(blank=True, null=True)
 
     objects = UserManager()
 

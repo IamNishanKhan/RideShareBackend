@@ -1,3 +1,4 @@
+# sos/models.py
 from django.db import models
 from users.models import User
 
@@ -14,7 +15,7 @@ class SOSAlert(models.Model):
     def __str__(self):
         lat = f"{self.latitude:.4f}" if self.latitude is not None else "None"
         lon = f"{self.longitude:.4f}" if self.longitude is not None else "None"
-        return f"SOS by {self.user.username} at ({lat}, {lon})"
+        return f"SOS by {str(self.user)} at ({lat}, {lon})"  # Use str(self.user) instead of self.user.username
 
     @property
     def location(self):
@@ -26,7 +27,7 @@ class EmergencyContact(models.Model):
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('user', 'contact')  # Prevent duplicate emergency contacts
+        unique_together = ('user', 'contact')
 
     def __str__(self):
-        return f"{self.contact.username} is an emergency contact for {self.user.username}"
+        return f"{str(self.contact)} is an emergency contact for {str(self.user)}"  # Use str() for both
