@@ -7,10 +7,16 @@ from .serializers import (UserRegistrationSerializer, UserProfileSerializer,
                           UserLoginSerializer, ForgotPasswordSerializer, VerifyForgotPasswordOTPSerializer, 
                           ChangePasswordSerializer)
 from .models import User
+from rides.models import Ride
+from rides.serializers import RideSerializer
+from reviews.models import Review, Badge
+from reviews.serializers import ReviewSerializer, BadgeSerializer, SimplifiedUserSerializer
 from django.core.cache import cache
 from django.core.mail import send_mail
+from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 import random
 import os
 
@@ -110,6 +116,62 @@ class CustomTokenObtainPairView(APIView):
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+class UserCompleteProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        try:
+            # Get the user with prefetching related data for optimization
+            user = get_object_or_404(
+                User.objects.prefetch_related(
+                    'hosted_rides',
+                    'ride_members',
+                    'received_reviews',
+                    'badge'
+                ),
+                id=user_id
+            )
+
+            # Basic user profile data
+            user_profile_serializer = UserProfileSerializer(user)
+
+            # Ride history (both hosted and joined rides)
+            ride_history = Ride.objects.filter(
+                Q(host=user) | Q(members=user),
+                is_completed=True
+            ).distinct().order_by('-departure_time')
+            ride_history_serializer = RideSerializer(ride_history, many=True)
+
+            # User reviews
+            reviews = Review.objects.filter(reviewed_user=user).select_related('reviewer', 'ride')
+            review_serializer = ReviewSerializer(reviews, many=True)
+
+            # Badge status
+            badge, created = Badge.objects.get_or_create(user=user)
+            if created or not badge.level:
+                badge.update_badge()
+            badge_serializer = BadgeSerializer(badge)
+
+            # Combine all data into a single response
+            response_data = {
+                "user": {
+                    **user_profile_serializer.data,
+                    "badge": badge_serializer.data,
+                    "ride_history": ride_history_serializer.data,
+                    "reviews": review_serializer.data,
+                    "total_completed_rides": ride_history.count(),
+                    "average_rating": badge.get_average_rating(),
+                }
+            }
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to retrieve user profile: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
