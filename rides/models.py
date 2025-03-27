@@ -48,7 +48,7 @@ class Ride(models.Model):
             'Uber': 3,
             'Taxi': 3,
             'Private Car': 3,
-            'Private Bike': 1,
+            'Private Bike': 2,
             'Rickshaw': 2,
         }
         return max_seats.get(self.vehicle_type, 3)

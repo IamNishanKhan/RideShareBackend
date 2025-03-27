@@ -18,7 +18,7 @@ class ChatMessageInline(admin.TabularInline):
 # Register the Ride model with the inline
 @admin.register(Ride)
 class RideAdmin(admin.ModelAdmin):
-    list_display = ('ride_code', 'host', 'vehicle_type', 'pickup_name', 'destination_name', 'seats_available', 'is_completed')
+    list_display = ('pk', 'ride_code', 'host', 'vehicle_type', 'pickup_name', 'destination_name', 'seats_available', 'is_completed')
     search_fields = ('ride_code', 'host__first_name', 'host__last_name', 'pickup_name', 'destination_name')
     list_filter = ('vehicle_type', 'is_completed', 'departure_time')
     inlines = [ChatMessageInline]
