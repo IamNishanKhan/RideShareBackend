@@ -3,6 +3,8 @@ from django.core.exceptions import ValidationError
 from users.models import User
 import random
 import string
+from .firebase import sync_ride_to_firestore
+
 
 def generate_ride_code():
     """Generate a unique 6-character alphanumeric code."""
@@ -60,14 +62,10 @@ class Ride(models.Model):
     def clean(self):
         if self.is_female_only and self.host.gender != 'Female':
             raise ValidationError("Only female hosts can create female-only ride groups.")
-
+        
     def save(self, *args, **kwargs):
-        # Check if this is an update and is_completed has changed to True
-        if self.pk:  # If the instance already exists (update)
-            old_instance = Ride.objects.get(pk=self.pk)
-            if not old_instance.is_completed and self.is_completed:
-                # Ride just completed, delete all chat messages immediately
-                self.chat_messages.all().delete()
+        super().save(*args, **kwargs)
+        sync_ride_to_firestore(self)
 
         # Set seats_available only on creation
         if not self.pk:

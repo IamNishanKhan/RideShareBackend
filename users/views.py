@@ -99,10 +99,10 @@ class CustomTokenObtainPairView(APIView):
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
-            expo_push_token = serializer.validated_data.get('expo_push_token')  # Add this
+            expo_push_token = serializer.validated_data.get('expo_push_token') 
             user = User.objects.filter(email=email).first()
             if user and user.check_password(password):
-                if expo_push_token and user.expo_push_token != expo_push_token:  # Update token if changed
+                if expo_push_token and user.expo_push_token != expo_push_token: 
                     user.expo_push_token = expo_push_token
                     user.save()
                 refresh = RefreshToken.for_user(user)

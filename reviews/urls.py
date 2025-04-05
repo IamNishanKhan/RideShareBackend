@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     CreateReviewView, UserReviewsView, BadgeStatusView,
-    ListUnreviewedRideMembersView  # Added new view
+    ListUnreviewedRideMembersView
 )
 
 urlpatterns = [
