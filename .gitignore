@@ -1,2 +1,4 @@
 venv/
 firebase-service-account.json
+*.json.secret
+credentials/*.json
